@@ -45,6 +45,7 @@
   .mobile-alert { @apply mt-2 rounded-lg px-2.5 py-1.5 text-xs font-extrabold leading-5; }
   .mobile-alert-refer { @apply bg-blue-50 text-blue-900; }
   .mobile-alert-vpn { @apply bg-amber-50 text-amber-950; }
+  .mobile-alert-confirmed { @apply bg-emerald-50 text-emerald-950; }
   .eligibility-shell { padding-bottom: calc(11rem + env(safe-area-inset-bottom)); }
   .result-card { @apply rounded-xl border border-slate-200 bg-white p-4 shadow-sm; }
   .result-card h3 { @apply font-black text-ink; }

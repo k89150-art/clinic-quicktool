@@ -1,10 +1,17 @@
 export type EligibilityStatus = 'eligible' | 'not-eligible' | 'insufficient-data' | 'refer';
 export type TriState = 'yes' | 'no' | 'unknown';
 
+export interface ClinicalAdvisory {
+  code: string;
+  severity: 'info' | 'warning' | 'important';
+  message: string;
+}
+
 export interface EligibilityResult {
   status: EligibilityStatus;
   reasons: string[];
   missingFields: string[];
+  advisories: ClinicalAdvisory[];
 }
 
 export interface EligibilityInputState {

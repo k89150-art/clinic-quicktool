@@ -39,6 +39,39 @@ describe('metabolic syndrome boundaries', () => {
     const result = evaluateMetabolicSyndrome(base({ waist: 95, bmi: 30 }));
     expect(result.positiveCount).toBe(1);
   });
+
+  it.each([
+    [{ sbp: 140, dbp: null }, 'positive'],
+    [{ sbp: null, dbp: 90 }, 'positive'],
+    [{ sbp: 120, dbp: null }, 'unknown'],
+    [{ sbp: null, dbp: 70 }, 'unknown'],
+    [{ sbp: 120, dbp: 70 }, 'negative']
+  ])('handles partial blood pressure evidence %#', (values, status) => {
+    expect(evaluateMetabolicSyndrome(base(values)).factors.bloodPressure).toBe(status);
+  });
+
+  it.each([
+    ['glucoseMedication', 'glucose'],
+    ['bloodPressureMedication', 'bloodPressure'],
+    ['triglycerideMedication', 'triglycerides'],
+    ['hdlMedication', 'hdl']
+  ])('treats %s as a positive path', (field, factor) => {
+    const result = evaluateMetabolicSyndrome(base({ [field]: true }));
+    expect(result.factors[factor as keyof typeof result.factors]).toBe('positive');
+  });
+
+  it.each([
+    ['waist', 'obesity'], ['bmi', 'obesity'], ['fastingGlucose', 'glucose'],
+    ['sbp', 'bloodPressure'], ['dbp', 'bloodPressure'], ['triglycerides', 'triglycerides'], ['hdl', 'hdl']
+  ])('does not interpret invalid %s as a negative criterion', (field, factor) => {
+    const overrides: Partial<MetabolicInput> = { [field]: -1 };
+    if (field === 'waist') overrides.bmi = null;
+    if (field === 'bmi') overrides.waist = null;
+    if (field === 'sbp') overrides.dbp = null;
+    if (field === 'dbp') overrides.sbp = null;
+    const result = evaluateMetabolicSyndrome(base(overrides));
+    expect(result.factors[factor as keyof typeof result.factors]).toBe('unknown');
+  });
 });
 
 describe('metabolic 3/5 and program eligibility', () => {
@@ -52,4 +85,26 @@ describe('metabolic 3/5 and program eligibility', () => {
   });
 
   it('excludes dialysis', () => expect(evaluateMetabolicProgramEligibility(base({ dialysis: 'yes', waist: 95, fastingGlucose: 105, sbp: 135 })).status).toBe('not-eligible'));
+
+  it('keeps known age exclusion ahead of unknown dialysis', () => {
+    expect(evaluateMetabolicProgramEligibility(base({ age: 70, dialysis: 'unknown', waist: 95, fastingGlucose: 105, sbp: 135 })).status).toBe('not-eligible');
+  });
+
+  it('keeps known dialysis exclusion ahead of missing age', () => {
+    expect(evaluateMetabolicProgramEligibility(base({ age: null, dialysis: 'yes', waist: 95, fastingGlucose: 105, sbp: 135 })).status).toBe('not-eligible');
+  });
+
+  it('treats invalid age as insufficient rather than an age-range failure', () => {
+    const result = evaluateMetabolicProgramEligibility(base({ age: -1, waist: 95, fastingGlucose: 105, sbp: 135 }));
+    expect(result.status).toBe('insufficient-data');
+    expect(result.missingFields).toContain('年齡（數值無效）');
+  });
+
+  it.each([
+    [false, '尚未確認 VPN／收案系統資格'],
+    [true, 'VPN／收案系統資格已人工確認']
+  ])('uses manual VPN wording when confirmed=%s', (vpnConfirmed, wording) => {
+    const result = evaluateMetabolicProgramEligibility(base({ vpnConfirmed, waist: 95, fastingGlucose: 105, sbp: 135 }));
+    expect(result.reasons).toEqual(['依目前輸入條件符合', wording]);
+  });
 });

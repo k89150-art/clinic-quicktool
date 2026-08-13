@@ -240,7 +240,7 @@ function NumberField({ label, value, unit, onChange, max, placeholder }: { label
     <label className="field-label">{label}
       <span className="relative block">
         <input className={`field ${unit ? 'pr-20' : ''} ${invalid ? 'field-error' : ''}`} type="number" min="0" step="any" inputMode="decimal" placeholder={placeholder}
-          value={value ?? ''} onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))} aria-invalid={invalid} />
+          value={value ?? ''} onChange={(event) => { const parsed = Number(event.target.value); onChange(event.target.value === '' || !Number.isFinite(parsed) ? null : parsed); }} aria-invalid={invalid} />
         {unit && <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-semibold text-slate-500">{unit}</span>}
       </span>
       {invalid && <span className="mt-1 text-xs font-semibold text-red-700" role="alert">數值疑似異常，請再次確認。</span>}
@@ -257,6 +257,7 @@ function ResultCard({ title, result, meta, purple = false }: { title: string; re
     <article className={`result-card ${purple ? 'result-card-purple' : ''}`}>
       <div className="flex flex-wrap items-center justify-between gap-2"><h3>{title}</h3><StatusBadge status={result.status} /></div>
       {meta && <p className="mt-2 text-sm font-extrabold text-slate-700">{meta}</p>}
+      {result.advisories.map((advisory) => <p key={advisory.code} className="mt-3 rounded-xl bg-blue-50 p-3 text-sm font-extrabold text-blue-950">🔵 {advisory.message}</p>)}
       <details className="mt-3">
         <summary>為什麼？</summary>
         <div className="mt-2 space-y-1 text-sm leading-6 text-slate-600">
@@ -276,8 +277,8 @@ function MobileResultSummary({ metabolic, metabolicProgram, dm, ckd, dkd, vpnCon
     { title: 'CKD', result: ckd, meta: ckd.stage ?? undefined, target: 'eligibility-ckd' },
     { title: 'DKD', result: dkd, target: 'eligibility-dm' }
   ];
-  const preEsrd = ckd.status === 'refer' && ckd.reasons.some((reason) => reason.includes('Pre-ESRD'));
-  const vpnPending = !vpnConfirmed && (metabolicProgram.status === 'eligible' || dm.status === 'eligible' || ckd.status === 'eligible');
+  const preEsrd = ckd.advisories.some((advisory) => advisory.code === 'PRE_ESRD');
+  const vpnApplicable = metabolicProgram.status === 'eligible' || dm.status === 'eligible' || ckd.status === 'eligible';
   return (
     <section className="mobile-summary" aria-label="即時判斷摘要" aria-live="polite">
       <div className="grid grid-cols-2 gap-x-3 gap-y-1">
@@ -287,7 +288,7 @@ function MobileResultSummary({ metabolic, metabolicProgram, dm, ckd, dkd, vpnCon
         })}
       </div>
       {preEsrd && <p className="mobile-alert mobile-alert-refer">🔵 CKD：建議評估 Pre-ESRD</p>}
-      {vpnPending && <div className="mobile-alert mobile-alert-vpn"><p>🟢 依目前條件符合</p><p>⚠ 尚未確認 VPN／收案系統資格</p></div>}
+      {vpnApplicable && <div className={`mobile-alert ${vpnConfirmed ? 'mobile-alert-confirmed' : 'mobile-alert-vpn'}`}><p>🟢 依目前輸入條件符合</p><p>{vpnConfirmed ? '✓ VPN／收案系統資格已人工確認' : '⚠ 尚未確認 VPN／收案系統資格'}</p></div>}
     </section>
   );
 }
@@ -315,7 +316,7 @@ function EligibilityPage() {
     vpnConfirmed: input.vpnConfirmed
   });
   const ckd = evaluateCkdEligibility({ egfr: input.egfr, uacr: input.uacr, upcr: input.upcr, recentVisit: input.ckdRecentVisit, primaryDiagnosis: input.ckdPrimaryDiagnosis, vpnConfirmed: input.vpnConfirmed });
-  const dkd = evaluateDkdEligibility(dm.status, ckd.status);
+  const dkd = evaluateDkdEligibility(dm, ckd);
   const needsUrine = ckd.stage === 'G1' || ckd.stage === 'G2';
 
   return (
@@ -363,7 +364,7 @@ function EligibilityPage() {
           </SectionCard>
 
           <SectionCard title="5. 系統資格確認" hint="本工具不串接健保 VPN；請由工作人員完成查詢。">
-            <label className="confirm-check"><input type="checkbox" checked={input.vpnConfirmed} onChange={(event) => update('vpnConfirmed', event.target.checked)} /><span><strong>已確認相關 VPN／收案系統資格</strong><small>已排除其他院所收案、行政衝突等情形</small></span></label>
+            <label className="confirm-check"><input type="checkbox" checked={input.vpnConfirmed} onChange={(event) => update('vpnConfirmed', event.target.checked)} /><span><strong>已人工確認 VPN／收案系統資格</strong><small>本工具未直接連線 VPN；請依院所查詢結果人工確認。</small></span></label>
           </SectionCard>
         </div>
 
@@ -375,7 +376,7 @@ function EligibilityPage() {
             <ResultCard title="CKD" result={ckd} meta={ckd.stage ?? undefined} />
             <ResultCard title="DKD" result={dkd} purple />
           </div>
-          {!input.vpnConfirmed && (metabolicProgram.status === 'eligible' || dm.status === 'eligible' || ckd.status === 'eligible') && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900">⚠ 尚未確認系統收案資格</p>}
+          {(metabolicProgram.status === 'eligible' || dm.status === 'eligible' || ckd.status === 'eligible') && <div className={`mt-3 rounded-xl p-3 text-sm font-bold ${input.vpnConfirmed ? 'bg-emerald-50 text-emerald-900' : 'bg-amber-50 text-amber-900'}`}><p>🟢 依目前輸入條件符合</p><p className="mt-1">{input.vpnConfirmed ? '✓ VPN／收案系統資格已人工確認' : '⚠ 尚未確認 VPN／收案系統資格'}</p></div>}
         </aside>
       </div>
     </main>

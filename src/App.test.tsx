@@ -69,7 +69,19 @@ describe('mobile result summary semantics', () => {
   it('shows the Pre-ESRD reason directly when CKD refers', async () => {
     await openEligibility();
     fireEvent.change(screen.getByLabelText(/eGFR/), { target: { value: '44.9' } });
-    expect(screen.getByText('🔵 CKD：建議評估 Pre-ESRD')).toBeInTheDocument();
+    expect(screen.getAllByText(/CKD：建議評估 Pre-ESRD/).length).toBeGreaterThan(0);
+  });
+
+  it('preserves the Pre-ESRD advisory when DKD is not eligible because DM failed', async () => {
+    const user = await openEligibility();
+    const dmDiagnosis = screen.getByRole('group', { name: '有 E08–E13 糖尿病診斷' });
+    await user.click(within(dmDiagnosis).getByRole('button', { name: '否' }));
+    fireEvent.change(screen.getByLabelText(/eGFR/), { target: { value: '44.9' } });
+
+    expect(
+      screen.getByRole('button', { name: /DKD：不符合，前往對應欄位/ }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/CKD：建議評估 Pre-ESRD/).length).toBeGreaterThan(0);
   });
 
   it('shows conditional eligibility and pending VPN warning', async () => {
@@ -82,7 +94,21 @@ describe('mobile result summary semantics', () => {
     await choose('近 90 天本院糖尿病就醫 ≥ 2 次', '是');
     await choose('本次 DM 為主診斷', '是');
     await choose('過去一年本院是否曾因此方案結案', '否');
-    expect(screen.getByText('🟢 依目前條件符合')).toBeInTheDocument();
-    expect(screen.getByText('⚠ 尚未確認 VPN／收案系統資格')).toBeInTheDocument();
+    expect(screen.getAllByText('🟢 依目前輸入條件符合').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('⚠ 尚未確認 VPN／收案系統資格').length).toBeGreaterThan(0);
+  });
+
+  it('labels confirmed VPN qualification as manually confirmed', async () => {
+    const user = await openEligibility();
+    const choose = async (question: string, answer: string) => {
+      const group = screen.getByRole('group', { name: question });
+      await user.click(within(group).getByRole('button', { name: answer }));
+    };
+    await choose('有 E08–E13 糖尿病診斷', '是');
+    await choose('近 90 天本院糖尿病就醫 ≥ 2 次', '是');
+    await choose('本次 DM 為主診斷', '是');
+    await choose('過去一年本院是否曾因此方案結案', '否');
+    await user.click(screen.getByRole('checkbox', { name: /已人工確認 VPN/ }));
+    expect(screen.getAllByText('✓ VPN／收案系統資格已人工確認').length).toBeGreaterThan(0);
   });
 });

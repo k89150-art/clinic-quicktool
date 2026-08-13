@@ -4,6 +4,8 @@ Audit date: 2026-08-13
 Audited commit: `38283e1` (`Build Clinic QuickTool Phase 1`)  
 Scope: the rules actually executed by the Phase 1 client-side application. This document describes existing behavior only; it does not approve, reinterpret, or change any clinical rule.
 
+Phase 1.3 update: decision precedence, partial BP evidence, domain numeric validation, advisory propagation, and VPN wording were re-audited on 2026-08-13. The Phase 1.3 corrections below supersede the original Phase 1.1 observations where noted. **No confirmed numeric clinical threshold changed.**
+
 ## Status and data conventions
 
 - `eligible`: UI label `符合`.
@@ -49,14 +51,14 @@ Shared test file: `src/features/eligibility/domain/metabolicRules.test.ts`
 ### MET-DX-BP — Blood-pressure risk factor
 
 - **Inputs:** `sbp`, `dbp`, `bloodPressureMedication`.
-- **Actual expression:** medication true → positive; else if either `sbp === null || dbp === null` → unknown; else `sbp >= 130 || dbp >= 85` → positive, otherwise negative.
+- **Actual expression:** medication true → positive; otherwise a valid `sbp >= 130` or a valid `dbp >= 85` independently proves positive; both valid and below threshold → negative; otherwise unknown.
 - **Thresholds:** SBP `>= 130 mmHg` or DBP `>= 85 mmHg`.
-- **Positive:** medication true, or either threshold met when both measurements are present.
+- **Positive:** medication true, or either available valid measurement reaches its threshold; the other measurement is not required.
 - **Negative:** both measurements present, both below threshold, medication false.
-- **Insufficient:** either SBP or DBP missing and medication false, even if the other present value already exceeds its threshold.
+- **Insufficient:** medication false, no available measurement is positive, and one or both measurements are missing/invalid.
 - **Refer:** none.
-- **Tests:** SBP `129/130`; DBP `84/85`.
-- **TODO / uncertainty:** no explicit README TODO. Audit observation: partial BP input is always unknown under the present expression.
+- **Tests:** SBP `129/130`; DBP `84/85`; partial pairs `140/null`, `null/90`, `120/null`, `null/70`, and `120/70`.
+- **TODO / uncertainty:** no explicit README TODO. Phase 1.3 corrected partial positive-evidence handling without changing `130/85`.
 
 ### MET-DX-TG — Triglyceride risk factor
 
@@ -102,13 +104,13 @@ Test file: `src/features/eligibility/domain/metabolicRules.test.ts`
 ### MET-PGM-MISSING — Required-data gate
 
 - **Inputs:** `age`, `dialysis`, and the result of `evaluateMetabolicSyndrome()`.
-- **Actual expression:** missing age, `dialysis === 'unknown'`, or syndrome `insufficient-data` are collected; any missing item returns `insufficient-data` immediately.
+- **Actual expression:** known failures and unresolved fields are collected separately. Any age-range failure, `dialysis === 'yes'`, or syndrome `not-eligible` returns `not-eligible`; only when none exists do missing/invalid age, `dialysis === 'unknown'`, or syndrome `insufficient-data` return `insufficient-data`.
 - **Eligible:** not decided by this rule.
-- **Not eligible:** not decided by this rule.
-- **Insufficient:** at least one required item is missing/unknown.
+- **Not eligible:** any known required-condition failure, even if another required field is unknown.
+- **Insufficient:** at least one required item is missing/invalid/unknown and no known failure exists.
 - **Refer:** none.
-- **Tests:** aggregation unknown behavior is tested; there is no direct program test for missing age or dialysis unknown.
-- **TODO / uncertainty:** no explicit README TODO. Evaluation precedence means missing data wins before a known age exclusion or dialysis exclusion.
+- **Tests:** age 70 + dialysis unknown; age null + dialysis yes; invalid age; syndrome aggregation and complete eligible paths.
+- **TODO / uncertainty:** no explicit README TODO; the general administrative-conditions TODO still applies.
 
 ### MET-PGM-AGE — Program age range
 
@@ -149,11 +151,11 @@ Test file: `src/features/eligibility/domain/metabolicRules.test.ts`
 - **Inputs:** all above gates plus `vpnConfirmed`.
 - **Actual expression:** after all gates pass, always returns `eligible`; `vpnConfirmed` only selects one of two reason strings.
 - **Eligible:** syndrome eligible, age 20–64, dialysis no, all required inputs complete.
-- **Not eligible:** age exclusion, dialysis yes, or syndrome not eligible, subject to missing-data precedence.
-- **Insufficient:** any missing-data gate.
+- **Not eligible:** any known age exclusion, dialysis yes, or syndrome not eligible; known failure takes precedence over unrelated unknown data.
+- **Insufficient:** no known failure and at least one unresolved required input.
 - **Refer:** none.
-- **VPN behavior:** unchecked still returns `eligible` with “尚未確認 VPN／收案系統資格”; checked returns `eligible` with confirmed wording.
-- **Tests:** age and dialysis; VPN wording/status is not unit-tested.
+- **VPN behavior:** VPN never changes the clinical status. Eligible results always say `依目前輸入條件符合`, followed by either `尚未確認 VPN／收案系統資格` or `VPN／收案系統資格已人工確認`.
+- **Tests:** age/dialysis boundaries, known-failure + unknown combinations, invalid age, and both VPN wording paths.
 - **TODO / uncertainty:** **yes** — README administrative exclusions TODO; application cannot verify external VPN conflicts.
 
 ## 3. DM program eligibility
@@ -164,10 +166,10 @@ Test file: `src/features/eligibility/domain/diabetesRules.test.ts`
 ### DM-MISSING — Complete four-field gate
 
 - **Inputs:** `diagnosisE08ToE13`, `visitsWithin90DaysAtLeastTwo`, `primaryDiagnosis`, `closedWithinPastYear`.
-- **Actual expression:** if **any** field is `unknown`, return `insufficient-data` immediately with all unknown fields listed.
+- **Actual expression:** collect explicit failures and unknown fields independently; any explicit failure returns `not-eligible`, otherwise any unknown returns `insufficient-data`.
 - **Eligible:** not decided by this rule.
-- **Not eligible:** not evaluated until no field is unknown.
-- **Insufficient:** any of four fields is unknown.
+- **Not eligible:** any explicit failure, even when another field is unknown.
+- **Insufficient:** one or more unknown fields only when no explicit failure exists.
 - **Refer:** none.
 - **Tests:** one case with `closedWithinPastYear === 'unknown'`.
 - **TODO / uncertainty:** **yes** — README requires confirmation of real VPN field mappings for recent diagnosis and visit count.
@@ -222,12 +224,12 @@ Test file: `src/features/eligibility/domain/diabetesRules.test.ts`
 ### DM-FINAL — Final DM result and VPN text
 
 - **Inputs:** four DM answers and optional `vpnConfirmed`.
-- **Actual expression:** with no unknowns, any accumulated rejection reason → `not-eligible`; otherwise `eligible`. VPN only changes the reason string.
+- **Actual expression:** any accumulated rejection reason → `not-eligible`; if there is no rejection but unknown data remains → `insufficient-data`; otherwise `eligible`. VPN only changes explanatory wording.
 - **Eligible:** diagnosis yes, visits yes, primary diagnosis yes, recent closure no.
-- **Not eligible:** any explicit failed condition, provided no condition is unknown.
-- **Insufficient:** any unknown takes precedence, even if another answer is already an explicit failure.
+- **Not eligible:** any explicit failed condition; known failure takes precedence over unknown data.
+- **Insufficient:** one or more unknown answers and no explicit failure.
 - **Refer:** none.
-- **Tests:** full eligible; one unknown; each individual failure.
+- **Tests:** full eligible; one unknown; each individual failure; diagnosis no + visits unknown; and VPN wording paths.
 - **TODO / uncertainty:** **yes** — VPN mapping and administrative conditions.
 
 ## 4. Early CKD program eligibility and staging
@@ -238,35 +240,35 @@ Test file: `src/features/eligibility/domain/ckdRules.test.ts`
 ### CKD-STAGE — eGFR stage classification
 
 - **Inputs:** `egfr`.
-- **Actual expression:** null → null; `>=90` G1; `>=60` G2; `>=45` G3a; `>=30` G3b; `>=15` G4; otherwise G5.
+- **Actual expression:** a valid finite non-negative value is staged as `>=90` G1; `>=60` G2; `>=45` G3a; `>=30` G3b; `>=15` G4; otherwise G5. Missing or invalid values return null.
 - **Boundaries:** `90`, `60`, `45`, `30`, `15` mL/min/1.73m².
 - **Eligible stage range:** stage alone can support Early CKD only for G1, G2, or G3a; urine/admin rules still apply.
 - **Not eligible:** no direct status from staging alone.
-- **Insufficient:** null eGFR.
+- **Insufficient:** missing, negative, `NaN`, infinite, or non-numeric runtime eGFR.
 - **Refer:** eGFR below 45 is handled by PRE-ESRD-EGFR.
-- **Tests:** `90`, `89.9`, `60`, `59.9`, `45`, `44.9`. G4/G5 boundaries are not directly tested.
+- **Tests:** both sides of `90`, `60`, `45`, `30`, and `15`, including direct G4/G5 boundary coverage and invalid values.
 - **TODO / uncertainty:** no explicit README TODO; general administrative-conditions TODO applies to enrollment, not staging.
 
-### CKD-EGFR-MISSING — Required eGFR
+### CKD-EGFR-MISSING — Required or invalid eGFR
 
 - **Inputs:** `egfr`.
-- **Actual expression:** `egfr === null` → `insufficient-data` immediately.
+- **Actual expression:** domain validation accepts only finite, non-negative numeric eGFR; otherwise it returns `insufficient-data` before staging or referral evaluation.
 - **Eligible / not eligible:** not evaluated without eGFR.
-- **Insufficient:** eGFR null.
+- **Insufficient:** eGFR missing or invalid.
 - **Refer:** not evaluated without eGFR.
-- **Tests:** indirectly through UI/default behavior; no direct unit-test assertion for null eGFR.
+- **Tests:** direct null, negative, `NaN`, and positive-infinity assertions.
 - **TODO / uncertainty:** none explicit.
 
 ### CKD-G1-G2-URINE — Proteinuria requirement
 
 - **Inputs:** `stage`, `uacr`, `upcr`.
-- **Actual expression:** for G1/G2 only: both null → insufficient; else positive when `(uacr ?? -1) >= 30 || (upcr ?? -1) >= 150`; otherwise not eligible.
+- **Actual expression:** for G1/G2 only: positive when either valid UACR is `>=30` or valid UPCR is `>=150`; otherwise one valid low value with the other missing is a known renal failure under the existing rule; no valid value is insufficient; any invalid unresolved value keeps the criterion insufficient unless the other value is already positive.
 - **Thresholds:** UACR `>= 30 mg/g` or UPCR `>= 150 mg/g`.
 - **Eligible condition contribution:** either threshold met.
-- **Not eligible:** at least one urine value supplied but neither threshold met, after missing administrative inputs are resolved.
-- **Insufficient:** both urine values null. Also, later administrative unknowns can make the final result insufficient even when supplied urine values are below threshold.
+- **Not eligible:** at least one valid urine value is below its threshold, the other is missing or also valid and below threshold, and neither value is invalid; this known renal failure takes precedence over administrative unknowns.
+- **Insufficient:** no valid urine value, or an invalid urine value remains unresolved and the other value is not positive; administrative unknowns apply only when no renal/admin failure exists.
 - **Refer:** UPCR `>=1000` is intercepted earlier by PRE-ESRD-UPCR.
-- **Tests:** missing urine at eGFR 75; UACR `29.9/30`; UPCR `149.9/150`.
+- **Tests:** missing urine at eGFR 75; UACR `29.9/30`; UPCR `149.9/150`; invalid urine alone and invalid + valid-low combinations.
 - **TODO / uncertainty:** no explicit threshold TODO. Evaluation precedence should be clinically reviewed with the overall administrative flow.
 
 ### CKD-G3A — G3a renal criterion
@@ -284,23 +286,23 @@ Test file: `src/features/eligibility/domain/ckdRules.test.ts`
 ### CKD-ADMIN — Facility visit and primary diagnosis
 
 - **Inputs:** `recentVisit`, `primaryDiagnosis`.
-- **Actual expression:** either unknown is added to missing fields; any missing field returns `insufficient-data`. Once none are unknown, either `no` returns `not-eligible`; both `yes` pass.
+- **Actual expression:** administrative `no` values are collected as known failures and `unknown` values as missing data. Known failures return `not-eligible` before missing-data evaluation.
 - **Eligible condition contribution:** recent visit yes and CKD primary diagnosis yes.
-- **Not eligible:** either answer no, provided neither is unknown and prior urine requirements are not missing.
-- **Insufficient:** either answer unknown. This takes precedence over known administrative “no” and over G1/G2 sub-threshold urine status.
+- **Not eligible:** either answer no, even when the other administrative answer is unknown; a known G1/G2 renal failure also takes precedence over administrative unknowns.
+- **Insufficient:** an administrative answer is unknown only when no renal or administrative failure is already decisive.
 - **Refer:** none.
-- **Tests:** base cases use yes/yes; no direct tests for each administrative failure or unknown combination.
+- **Tests:** yes/yes, recent-visit no + primary unknown, and G2 renal failure + administrative unknown.
 - **TODO / uncertainty:** **yes** — README administrative-conditions TODO.
 
 ### CKD-FINAL — Final Early CKD result and VPN text
 
 - **Inputs:** all CKD fields plus optional `vpnConfirmed`.
-- **Actual expression precedence:** eGFR missing → insufficient; Pre-ESRD condition → refer; urine/admin missing → insufficient; urine failure → not eligible; admin failure → not eligible; else eligible. VPN only changes reason text.
+- **Actual expression precedence:** invalid/missing eGFR → insufficient; Pre-ESRD condition → refer with advisory; otherwise collect renal/admin failures and missing data independently; any failure → not eligible; otherwise missing data → insufficient; else eligible.
 - **Eligible:** G1/G2 with proteinuria threshold or G3a, plus recent visit yes and primary diagnosis yes.
-- **Not eligible:** G1/G2 urine threshold fails or either administrative answer no, subject to missing-data precedence.
+- **Not eligible:** G1/G2 urine threshold fails or either administrative answer no; known failure takes precedence over unrelated unknown data.
 - **Insufficient:** eGFR null; required urine data absent; or admin unknown.
 - **Refer:** Pre-ESRD rule fires before other CKD eligibility evaluation.
-- **Tests:** major stage/proteinuria/referral boundaries; VPN wording/status is not tested.
+- **Tests:** all stage boundaries including G4/G5, proteinuria/referral boundaries, known-failure combinations, invalid numeric values, advisory creation, and VPN wording.
 - **TODO / uncertainty:** **yes** — administrative conditions and VPN conflict checking.
 
 ## 5. Pre-ESRD reminder
@@ -317,7 +319,8 @@ Test file: `src/features/eligibility/domain/ckdRules.test.ts`
 - **Insufficient:** only if eGFR is null, evaluated earlier.
 - **Refer:** returns `refer` immediately with Pre-ESRD reason.
 - **Tests:** eGFR `45/44.9` through staging/referral assertions.
-- **TODO / uncertainty:** no explicit README TODO. The reminder acts as the entire CKD result rather than a secondary advisory.
+- **Advisory:** also returns `{ code: 'PRE_ESRD', severity: 'important', message: 'CKD：建議評估 Pre-ESRD' }`.
+- **TODO / uncertainty:** no explicit README TODO. CKD may still use `refer`, but the advisory is now structurally separate and preserved downstream.
 
 ### PRE-ESRD-UPCR — High UPCR referral
 
@@ -337,7 +340,7 @@ Test file: `src/features/eligibility/domain/dkdRules.test.ts`
 
 ### DKD-DERIVE — Status derived from DM and CKD
 
-- **Inputs:** final `dmStatus`, final `ckdStatus`; there is no manual DKD input.
+- **Inputs:** final DM and CKD `EligibilityResult` objects; there is no manual DKD input.
 - **Actual expression and precedence:**
   1. Either status `not-eligible` → DKD `not-eligible`.
   2. Else either status `refer` → DKD `refer`.
@@ -348,8 +351,9 @@ Test file: `src/features/eligibility/domain/dkdRules.test.ts`
 - **Not eligible:** either upstream result not eligible; this takes precedence over the other result being refer or insufficient.
 - **Insufficient:** no upstream not-eligible/refer and at least one upstream result insufficient.
 - **Refer:** no upstream not-eligible and at least one upstream result refer.
-- **Tests:** eligible+eligible; not-eligible+eligible; eligible+insufficient.
-- **Untested combinations:** refer combinations and mixed-precedence pairs such as DM not-eligible + CKD refer.
+- **Advisory propagation:** upstream advisories are merged by advisory code and retained regardless of DKD status precedence.
+- **Tests:** eligible, insufficient, refer combinations, advisory propagation, and DM not-eligible + CKD refer with PRE_ESRD preserved.
+- **Untested combinations:** none of the precedence combinations requested for Phase 1.3 remain untested.
 - **TODO / uncertainty:** inherits all DM/CKD administrative and VPN uncertainties. DKD itself has no separate explicit README TODO.
 
 ## 7. Chronic prescription dates
@@ -408,15 +412,15 @@ Test file: `src/features/prescription/domain/prescriptionRules.test.ts`
 - **Tests:** scheduled 2026-06-22, actual 2026-06-25 → next 2026-07-23.
 - **TODO / uncertainty:** no explicit README TODO.
 
-## Audit findings requiring owner review (no rule changes made)
+## Phase 1.3 audit disposition
 
-1. VPN confirmation is informational only in every current engine; unchecked status remains `eligible`.
-2. Metabolic blood pressure is `unknown` whenever either SBP or DBP is missing, even if the present value already exceeds threshold.
-3. DM missing-data evaluation precedes rejection evaluation; one unknown plus one known failure returns `insufficient-data`.
-4. CKD missing administrative data precedes G1/G2 proteinuria failure and known administrative failure.
-5. Pre-ESRD returns the primary `refer` status, not a secondary warning alongside a separate Early CKD result.
-6. DKD `not-eligible` has precedence over `refer` when its two upstream statuses conflict.
-7. Domain functions do not reject negative or physiologically implausible numeric values; UI displays an abnormal-value warning but still passes the value to the engine.
-8. The existing 59 tests cover specified primary boundaries but do not cover all precedence combinations, medication flags, VPN wording, or administrative unknown/no combinations.
+1. VPN confirmation remains informational only; unchecked and manually checked states do not alter clinical eligibility thresholds.
+2. Metabolic BP now accepts decisive partial positive evidence while retaining `130/85` unchanged.
+3. DM, Early CKD, and metabolic program now apply known-failure-before-unknown precedence.
+4. Pre-ESRD remains compatible with CKD `refer` but is also a structured advisory preserved by DKD.
+5. DKD `not-eligible` still has precedence over `refer`, while advisories are no longer discarded.
+6. Domain numeric validation rejects negative, `NaN`, infinite, and non-numeric runtime values as invalid data. No new upper clinical threshold was introduced.
+7. Finite non-negative values remain domain-valid; existing UI upper-value warnings are not clinical engine exclusions.
+8. Phase 1.3 expanded the suite beyond the original 59 tests to cover requested precedence, medication, staging, invalid-data, advisory, and VPN wording paths.
 
-These are observations of the current implementation, not proposed corrections.
+The following TODOs remain unresolved and were not inferred or removed: HDL-related medication definition; DM VPN field mapping; complete administrative exclusions for all programs.
