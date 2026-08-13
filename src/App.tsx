@@ -2,12 +2,16 @@ import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { zhTW } from 'date-fns/locale';
 import {
-  ArrowLeft, CalendarDays, Check, ChevronRight, CircleAlert, ClipboardCheck,
+  ArrowLeft, CalendarDays, Check, ChevronRight, ClipboardCheck, FlaskConical,
   Info, Pill, RotateCcw, ShieldCheck, Stethoscope
 } from 'lucide-react';
 import { RULE_VERSIONS } from './config/clinicalRuleVersion';
-import { calculateActualDispense, calculateInitialSchedule } from './features/prescription/domain/prescriptionRules';
-import type { DispenseResult } from './features/prescription/domain/prescriptionTypes';
+import {
+  calculateInitialPrescriptionPlan, calculateSecondDispensePlan, calculateThirdDispensePlan
+} from './features/prescription/domain/prescriptionWorkflowRules';
+import type {
+  DispenseComparison, PrescriptionTimeline, PrescriptionVisitMode
+} from './features/prescription/domain/prescriptionWorkflowRules';
 import { isValidLocalDate, parseLocalDateInput, parseQuickMonthDay, toDateInputValue } from './features/prescription/dateInput';
 import { evaluateMetabolicProgramEligibility, evaluateMetabolicSyndrome } from './features/eligibility/domain/metabolicRules';
 import { evaluateDiabetesEligibility } from './features/eligibility/domain/diabetesRules';
@@ -72,7 +76,7 @@ function Home({ onNavigate }: { onNavigate: (page: Page) => void }) {
           <span className="home-icon bg-emerald-50 text-emerald-700"><Pill size={31} /></span>
           <span className="min-w-0 text-left">
             <span className="block text-xl font-extrabold text-ink">慢箋日期</span>
-            <span className="mt-1 block text-sm leading-6 text-slate-600">三次領藥日、提前與延後規則</span>
+            <span className="mt-1 block text-sm leading-6 text-slate-600">抽血、回診與後續領藥日期</span>
           </span>
           <ChevronRight className="ml-auto text-slate-400 transition-transform group-hover:translate-x-1" />
         </button>
@@ -121,90 +125,129 @@ function QuickDateInput({ date, onChange }: { date: Date | null; onChange: (date
   );
 }
 
-function DateHero({ order, date, tone = 'plain' }: { order: string; date: Date; tone?: 'plain' | 'primary' }) {
+function WorkflowDateResult({ label, date, icon }: { label: string; date: Date; icon: 'lab' | 'visit' }) {
   return (
-    <article className={`date-card ${tone === 'primary' ? 'date-card-primary' : ''}`}>
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-bold text-slate-600">{order}</p>
-        {tone === 'primary' && <span className="rounded-full bg-white/15 px-2.5 py-1 text-xs font-bold">第一次</span>}
-      </div>
-      <p className="mt-5 text-4xl font-black tabular-nums tracking-tight sm:text-5xl">{shortDate(date)}</p>
-      <p className="mt-1 text-base font-semibold opacity-80">{weekDay(date)}</p>
-      <p className="mt-5 border-t border-current/10 pt-3 text-xs font-medium opacity-70">{fullDate(date)}</p>
+    <article className={`workflow-date-result ${icon === 'lab' ? 'workflow-date-lab' : 'workflow-date-visit'}`}>
+      <p className="flex items-center gap-2 text-sm font-extrabold">{icon === 'lab' ? <FlaskConical size={20} /> : <Stethoscope size={20} />} {label}</p>
+      <p className="mt-3 text-4xl font-black tabular-nums tracking-tight sm:text-5xl">{shortDate(date)}</p>
+      <p className="mt-1 text-base font-bold opacity-80">{weekDay(date)}</p>
+      <p className="mt-3 text-xs font-semibold opacity-65">{format(date, 'yyyy/MM/dd')}</p>
     </article>
   );
 }
 
-function ActualDispensePanel({ label, scheduled }: { label: string; scheduled: Date }) {
-  const [open, setOpen] = useState(false);
-  const [actual, setActual] = useState<Date | null>(today);
-  const result = useMemo(() => isValidLocalDate(actual) ? calculateActualDispense(scheduled, actual) : null, [scheduled, actual]);
+function ModeButton({ mode, active, children, onSelect, ariaLabel }: { mode: PrescriptionVisitMode; active: boolean; children: string; onSelect: (mode: PrescriptionVisitMode) => void; ariaLabel?: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-      <button className="flex min-h-12 w-full items-center justify-between gap-3 text-left font-bold text-ink" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-        <span>{label}病人今天來領藥</span><span className="text-sm text-clinic-700">{open ? '收合' : '填寫'}</span>
-      </button>
-      {open && (
-        <div className="mt-4 border-t border-slate-100 pt-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs font-bold text-slate-500">原預定領藥日期</p><p className="mt-1 font-extrabold text-ink">{fullDate(scheduled)}</p></div>
-            <label className="field-label">實際領藥日期
-              <input className="field" type="date" value={toDateInputValue(actual)} aria-invalid={!actual} onChange={(event) => setActual(parseLocalDateInput(event.target.value))} />
-              {!actual && <span className="mt-1 block text-xs font-semibold text-red-700" role="alert">請輸入有效日期</span>}
-            </label>
-          </div>
-          {result && <DispenseOutcome result={result} />}
-        </div>
-      )}
+    <button type="button" aria-label={ariaLabel} aria-pressed={active} className={active ? 'workflow-mode-active' : 'workflow-mode'} onClick={() => onSelect(mode)}>{children}</button>
+  );
+}
+
+function ActualDateField({ label, value, onChange, ariaLabel }: { label: string; value: Date | null; onChange: (date: Date | null) => void; ariaLabel?: string }) {
+  return <label className="field-label">{label}
+    <input className="field" type="date" value={toDateInputValue(value)} aria-label={ariaLabel ?? label} aria-invalid={!value} onChange={(event) => onChange(parseLocalDateInput(event.target.value))} />
+    {!value && <span className="mt-1 block text-xs font-semibold text-red-700" role="alert">請輸入有效日期</span>}
+  </label>;
+}
+
+function DispenseContext({ order, result }: { order: '第2次' | '第3次'; result: DispenseComparison }) {
+  const config = {
+    early: `提前 ${result.differenceDays} 天`,
+    'on-time': '準時領藥',
+    late: `延後 ${result.differenceDays} 天`
+  }[result.status];
+  return (
+    <div className="workflow-context">
+      <p className="font-extrabold text-ink">{order}領藥 · {config}</p>
+      <div className="mt-2 grid gap-1 text-sm text-slate-600 sm:grid-cols-2">
+        <p>原定：<strong>{fullDate(result.scheduledDate)}</strong></p>
+        <p>實際：<strong>{fullDate(result.actualDate)}</strong></p>
+      </div>
     </div>
   );
 }
 
-function DispenseOutcome({ result }: { result: DispenseResult }) {
-  const config = {
-    early: { icon: '🟠', title: `提前 ${result.differenceDays} 天領藥`, note: '原排程維持不變', detail: `相當於實際領藥日起算 28+${result.differenceDays} 天。`, cls: 'bg-amber-50 border-amber-200' },
-    'on-time': { icon: '🟢', title: '準時領藥', note: '維持 28 天原排程', detail: '', cls: 'bg-emerald-50 border-emerald-200' },
-    late: { icon: '🔵', title: `延後 ${result.differenceDays} 天領藥`, note: '以實際領藥日期重新起算 28 天', detail: '', cls: 'bg-blue-50 border-blue-200' }
-  }[result.status];
-  return (
-    <div className={`mt-4 rounded-2xl border p-4 ${config.cls}`} aria-live="polite">
-      <p className="font-extrabold text-ink">{config.icon} {config.title}</p>
-      <div className="mt-4 flex items-end justify-between gap-4">
-        <div><p className="text-xs font-bold text-slate-600">下次領藥</p><p className="text-3xl font-black tabular-nums text-ink">{shortDate(result.nextDispenseDate)}</p></div>
-        <p className="pb-1 text-sm font-bold text-slate-700">{weekDay(result.nextDispenseDate)}</p>
-      </div>
-      <p className="mt-3 text-sm font-semibold text-slate-700">{config.note}</p>
-      {config.detail && <p className="mt-1 text-xs text-slate-600">{config.detail}</p>}
+function PrescriptionResult({ mode, timeline, dispense }: { mode: PrescriptionVisitMode; timeline: PrescriptionTimeline; dispense?: DispenseComparison }) {
+  return <section aria-label="慢箋計算結果" className="space-y-4" aria-live="polite">
+    <div className="grid grid-cols-2 gap-3 sm:gap-4">
+      <WorkflowDateResult label="抽血日期" date={timeline.labDate} icon="lab" />
+      <WorkflowDateResult label="回診日期" date={timeline.followUpDate} icon="visit" />
     </div>
-  );
+    <div className="panel workflow-details">
+      {dispense && <DispenseContext order={mode === 'second-dispense' ? '第2次' : '第3次'} result={dispense} />}
+      <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+        {mode === 'new' && <p>第1次領藥：<strong>{fullDate(timeline.lastVisitDate)}</strong></p>}
+        <p>第2次預定：<strong>{fullDate(timeline.scheduledSecondDate)}</strong></p>
+        <p>第3次預定：<strong>{fullDate(timeline.scheduledThirdDate)}</strong></p>
+      </div>
+    </div>
+  </section>;
+}
+
+function PrescriptionMobileSummary({ timeline }: { timeline: PrescriptionTimeline }) {
+  return <aside className="prescription-mobile-summary" aria-label="慢箋主要日期摘要" aria-live="polite">
+    <div><span>🧪 抽血</span><strong>{shortDate(timeline.labDate)}</strong><small>{weekDay(timeline.labDate)}</small></div>
+    <div><span>🩺 回診</span><strong>{shortDate(timeline.followUpDate)}</strong><small>{weekDay(timeline.followUpDate)}</small></div>
+  </aside>;
 }
 
 function PrescriptionPage() {
-  const [firstDate, setFirstDate] = useState<Date | null>(today);
-  const schedule = useMemo(() => isValidLocalDate(firstDate) ? calculateInitialSchedule(firstDate) : null, [firstDate]);
+  const [mode, setMode] = useState<PrescriptionVisitMode>('new');
+  const [lastVisitDate, setLastVisitDate] = useState<Date | null>(today);
+  const [actualSecondDate, setActualSecondDate] = useState<Date | null>(today);
+  const [actualThirdDate, setActualThirdDate] = useState<Date | null>(today);
+  const [secondWasDelayed, setSecondWasDelayed] = useState(false);
+
+  const selectMode = (nextMode: PrescriptionVisitMode) => {
+    setMode(nextMode);
+    setLastVisitDate(nextMode === 'new' ? today() : null);
+    setActualSecondDate(today());
+    setActualThirdDate(today());
+    setSecondWasDelayed(false);
+  };
+
+  const result = useMemo(() => {
+    if (mode === 'new') {
+      const timeline = calculateInitialPrescriptionPlan(lastVisitDate);
+      return timeline ? { timeline } : null;
+    }
+    if (mode === 'second-dispense') return calculateSecondDispensePlan({ lastVisitDate, actualSecondDate });
+    return calculateThirdDispensePlan({ lastVisitDate, actualThirdDate, secondWasDelayed, actualSecondDate });
+  }, [mode, lastVisitDate, actualSecondDate, actualThirdDate, secondWasDelayed]);
+
   return (
-    <main className="page-shell">
+    <main className="page-shell prescription-shell">
       <div className="page-heading">
-        <div><p className="eyebrow"><Pill size={16} /> 固定 28 天週期</p><h1>慢箋日期</h1><p>選擇第一次領藥日期，後續日期立即更新。</p></div>
-        <button className="secondary-button" onClick={() => setFirstDate(today())}><RotateCcw size={18} /> 重設為今天</button>
+        <div><p className="eyebrow"><Pill size={16} /> 固定 28 天週期</p><h1>慢箋療程</h1><p>從最後一次看診／開慢箋日期，快速推算抽血與回診日期。</p></div>
+        <button className="secondary-button" onClick={() => selectMode(mode)}><RotateCcw size={18} /> 重設此模式</button>
       </div>
       <section className="panel">
-        <h2 className="section-title"><CalendarDays size={20} /> 第一次領藥日期</h2>
-        <QuickDateInput date={firstDate} onChange={setFirstDate} />
+        <h2 className="section-title"><CalendarDays size={20} /> 最後一次看診／開慢箋日期</h2>
+        <div className="mt-4"><QuickDateInput key={mode} date={lastVisitDate} onChange={setLastVisitDate} /></div>
+        <fieldset className="mt-5">
+          <legend className="text-sm font-extrabold text-slate-700">目前狀況</legend>
+          <div className="mt-2 grid grid-cols-3 gap-2" role="group" aria-label="目前狀況">
+            <ModeButton mode="new" active={mode === 'new'} onSelect={selectMode}>新開慢箋</ModeButton>
+            <ModeButton mode="second-dispense" active={mode === 'second-dispense'} onSelect={selectMode} ariaLabel="第 2 次領藥；第二次：病人今天來領藥">第 2 次領藥</ModeButton>
+            <ModeButton mode="third-dispense" active={mode === 'third-dispense'} onSelect={selectMode}>第 3 次領藥</ModeButton>
+          </div>
+        </fieldset>
+
+        {mode === 'second-dispense' && <div className="mt-5 border-t border-slate-100 pt-5"><ActualDateField label="實際第2次領藥日期" ariaLabel="實際領藥日期" value={actualSecondDate} onChange={setActualSecondDate} /></div>}
+        {mode === 'third-dispense' && <div className="mt-5 space-y-4 border-t border-slate-100 pt-5">
+          <fieldset>
+            <legend className="field-label">第2次領藥是否曾延後？</legend>
+            <div className="choice-group mt-2">
+              <button type="button" className={!secondWasDelayed ? 'choice-active' : 'choice'} onClick={() => { setSecondWasDelayed(false); setActualSecondDate(today()); }}>沒有／不知道</button>
+              <button type="button" className={secondWasDelayed ? 'choice-active' : 'choice'} onClick={() => { setSecondWasDelayed(true); setActualSecondDate(null); }}>有</button>
+            </div>
+          </fieldset>
+          {!secondWasDelayed && <p className="workflow-hint">若第2次曾延後領藥，請改選「有」以重新計算正確排程。</p>}
+          {secondWasDelayed && <ActualDateField label="第2次實際領藥日期" value={actualSecondDate} onChange={setActualSecondDate} />}
+          <ActualDateField label="實際第3次領藥日期" value={actualThirdDate} onChange={setActualThirdDate} />
+        </div>}
       </section>
-      {schedule ? <>
-        <section aria-label="三次領藥日期" className="grid gap-4 md:grid-cols-3">
-          <DateHero order="今天／起始日" date={schedule.firstDate} tone="primary" />
-          <DateHero order="第二次 · +28 天" date={schedule.secondDate} />
-          <DateHero order="第三次 · +56 天" date={schedule.thirdDate} />
-        </section>
-        {schedule.secondDate.getFullYear() !== schedule.firstDate.getFullYear() && <p className="notice"><CircleAlert size={18} /> 排程已跨年度，請確認上方完整年份。</p>}
-        <section className="space-y-3">
-          <h2 className="section-title">實際領藥調整</h2>
-          <ActualDispensePanel label="第二次：" scheduled={schedule.secondDate} />
-          <ActualDispensePanel label="第三次：" scheduled={schedule.thirdDate} />
-        </section>
-      </> : <section className="panel text-center" aria-live="polite"><CalendarDays className="mx-auto text-slate-400" /><p className="mt-3 font-extrabold text-ink">請輸入有效日期</p><p className="mt-1 text-sm text-slate-500">日期有效後將立即顯示三次領藥排程。</p></section>}
+      {result ? <><PrescriptionResult mode={mode} timeline={result.timeline} dispense={'dispense' in result ? result.dispense : undefined} />{mode !== 'new' && <PrescriptionMobileSummary timeline={result.timeline} />}</>
+        : <section className="panel text-center" aria-live="polite"><CalendarDays className="mx-auto text-slate-400" /><p className="mt-3 font-extrabold text-ink">請輸入有效日期</p><p className="mt-1 text-sm text-slate-500">日期有效後將立即顯示三次領藥排程。</p></section>}
     </main>
   );
 }

@@ -28,6 +28,18 @@
   .field-error { @apply border-red-500 bg-red-50; }
   .date-card { @apply rounded-3xl border border-slate-200 bg-white p-5 text-ink shadow-soft sm:p-6; }
   .date-card-primary { @apply border-clinic-700 bg-clinic-700 text-white; }
+  .workflow-mode { @apply min-h-14 rounded-xl border border-slate-200 bg-slate-50 px-2 py-3 text-sm font-extrabold text-slate-600 hover:border-clinic-600 hover:bg-white; }
+  .workflow-mode-active { @apply min-h-14 rounded-xl border border-clinic-700 bg-clinic-700 px-2 py-3 text-sm font-extrabold text-white shadow-sm; }
+  .workflow-date-result { @apply min-w-0 rounded-2xl border p-4 shadow-soft sm:p-6; }
+  .workflow-date-lab { @apply border-cyan-200 bg-cyan-50 text-cyan-950; }
+  .workflow-date-visit { @apply border-clinic-100 bg-clinic-50 text-clinic-800; }
+  .workflow-context { @apply mb-4 border-b border-slate-100 pb-4; }
+  .workflow-details { @apply space-y-3; }
+  .workflow-hint { @apply rounded-xl bg-blue-50 px-3 py-2 text-sm font-medium leading-6 text-blue-900; }
+  .prescription-mobile-summary { @apply fixed inset-x-3 z-30 grid grid-cols-2 gap-2 rounded-2xl border border-slate-300 bg-white/95 p-2 shadow-2xl backdrop-blur-sm lg:hidden; bottom: calc(0.5rem + env(safe-area-inset-bottom)); }
+  .prescription-mobile-summary > div { @apply grid grid-cols-[auto_1fr] items-center gap-x-2 rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600; }
+  .prescription-mobile-summary strong { @apply row-span-2 text-right text-xl font-black tabular-nums text-ink; }
+  .prescription-mobile-summary small { @apply text-[11px] font-semibold; }
   .notice { @apply flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900; }
   .question-row { @apply flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between; }
   .question-row legend { @apply max-w-xl text-sm font-bold leading-6 text-slate-700; }
@@ -62,6 +74,8 @@
 }
 
 @media (max-width: 1023px) {
+  .prescription-shell { padding-bottom: calc(6.5rem + env(safe-area-inset-bottom)); }
+  body:has(input:focus) .prescription-mobile-summary { display: none; }
   body:has(input:focus) .mobile-summary { @apply px-2 py-1; }
   body:has(input:focus) .mobile-summary > .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   body:has(input:focus) .mobile-summary-row { @apply min-h-8 justify-center gap-1 border-0 text-xs; }
