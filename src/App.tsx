@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { addDays, format } from 'date-fns';
+import { format } from 'date-fns';
 import { zhTW } from 'date-fns/locale';
 import {
   ArrowLeft, CalendarDays, Check, ChevronRight, CircleAlert, ClipboardCheck,
@@ -8,6 +8,7 @@ import {
 import { RULE_VERSIONS } from './config/clinicalRuleVersion';
 import { calculateActualDispense, calculateInitialSchedule } from './features/prescription/domain/prescriptionRules';
 import type { DispenseResult } from './features/prescription/domain/prescriptionTypes';
+import { isValidLocalDate, parseLocalDateInput, parseQuickMonthDay, toDateInputValue } from './features/prescription/dateInput';
 import { evaluateMetabolicProgramEligibility, evaluateMetabolicSyndrome } from './features/eligibility/domain/metabolicRules';
 import { evaluateDiabetesEligibility } from './features/eligibility/domain/diabetesRules';
 import { evaluateCkdEligibility } from './features/eligibility/domain/ckdRules';
@@ -17,11 +18,6 @@ import type { EligibilityInputState, EligibilityResult, EligibilityStatus, TriSt
 type Page = 'home' | 'prescription' | 'eligibility';
 
 const today = () => new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
-const toDateValue = (date: Date) => format(date, 'yyyy-MM-dd');
-const fromDateValue = (value: string) => {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(year, month - 1, day);
-};
 const fullDate = (date: Date) => format(date, 'yyyy/MM/dd（EEEEE）', { locale: zhTW });
 const shortDate = (date: Date) => format(date, 'MM/dd');
 const weekDay = (date: Date) => format(date, 'EEEE', { locale: zhTW });
@@ -97,20 +93,13 @@ function Home({ onNavigate }: { onNavigate: (page: Page) => void }) {
   );
 }
 
-function QuickDateInput({ date, onChange }: { date: Date; onChange: (date: Date) => void }) {
+function QuickDateInput({ date, onChange }: { date: Date | null; onChange: (date: Date | null) => void }) {
   const [quick, setQuick] = useState('');
   const [error, setError] = useState('');
   const applyQuick = () => {
-    const digits = quick.replace(/\D/g, '');
-    if (digits.length !== 3 && digits.length !== 4) {
-      setError('請輸入 3–4 碼，例如 525 或 1025');
-      return;
-    }
-    const month = Number(digits.length === 3 ? digits.slice(0, 1) : digits.slice(0, 2));
-    const day = Number(digits.length === 3 ? digits.slice(1) : digits.slice(2));
-    const parsed = new Date(today().getFullYear(), month - 1, day);
-    if (parsed.getMonth() !== month - 1 || parsed.getDate() !== day) {
-      setError('日期不存在，請再次確認');
+    const parsed = parseQuickMonthDay(quick, today().getFullYear());
+    if (!parsed) {
+      setError('請輸入有效日期，例如 525 或 1025');
       return;
     }
     setError('');
@@ -120,13 +109,14 @@ function QuickDateInput({ date, onChange }: { date: Date; onChange: (date: Date)
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       <label className="field-label">日期選擇
-        <input className="field" type="date" value={toDateValue(date)} onChange={(event) => onChange(fromDateValue(event.target.value))} />
+        <input className="field" type="date" value={toDateInputValue(date)} aria-invalid={!date}
+          onChange={(event) => { const parsed = parseLocalDateInput(event.target.value); onChange(parsed); setError(parsed ? '' : '請輸入有效日期'); }} />
       </label>
       <label className="field-label">快速輸入（月日）
         <input className="field" inputMode="numeric" maxLength={4} placeholder="例如 525、1025" value={quick}
           onChange={(event) => setQuick(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && applyQuick()} onBlur={() => quick && applyQuick()} />
       </label>
-      {error && <p className="sm:col-span-2 text-sm font-medium text-red-700" role="alert">{error}</p>}
+      {(error || !date) && <p className="sm:col-span-2 text-sm font-medium text-red-700" role="alert">{error || '請輸入有效日期'}</p>}
     </div>
   );
 }
@@ -147,8 +137,8 @@ function DateHero({ order, date, tone = 'plain' }: { order: string; date: Date; 
 
 function ActualDispensePanel({ label, scheduled }: { label: string; scheduled: Date }) {
   const [open, setOpen] = useState(false);
-  const [actual, setActual] = useState(today);
-  const result = useMemo(() => calculateActualDispense(scheduled, actual), [scheduled, actual]);
+  const [actual, setActual] = useState<Date | null>(today);
+  const result = useMemo(() => isValidLocalDate(actual) ? calculateActualDispense(scheduled, actual) : null, [scheduled, actual]);
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
       <button className="flex min-h-12 w-full items-center justify-between gap-3 text-left font-bold text-ink" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
@@ -159,10 +149,11 @@ function ActualDispensePanel({ label, scheduled }: { label: string; scheduled: D
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs font-bold text-slate-500">原預定領藥日期</p><p className="mt-1 font-extrabold text-ink">{fullDate(scheduled)}</p></div>
             <label className="field-label">實際領藥日期
-              <input className="field" type="date" value={toDateValue(actual)} onChange={(event) => setActual(fromDateValue(event.target.value))} />
+              <input className="field" type="date" value={toDateInputValue(actual)} aria-invalid={!actual} onChange={(event) => setActual(parseLocalDateInput(event.target.value))} />
+              {!actual && <span className="mt-1 block text-xs font-semibold text-red-700" role="alert">請輸入有效日期</span>}
             </label>
           </div>
-          <DispenseOutcome result={result} />
+          {result && <DispenseOutcome result={result} />}
         </div>
       )}
     </div>
@@ -189,8 +180,8 @@ function DispenseOutcome({ result }: { result: DispenseResult }) {
 }
 
 function PrescriptionPage() {
-  const [firstDate, setFirstDate] = useState(today);
-  const schedule = useMemo(() => calculateInitialSchedule(firstDate), [firstDate]);
+  const [firstDate, setFirstDate] = useState<Date | null>(today);
+  const schedule = useMemo(() => isValidLocalDate(firstDate) ? calculateInitialSchedule(firstDate) : null, [firstDate]);
   return (
     <main className="page-shell">
       <div className="page-heading">
@@ -201,17 +192,19 @@ function PrescriptionPage() {
         <h2 className="section-title"><CalendarDays size={20} /> 第一次領藥日期</h2>
         <QuickDateInput date={firstDate} onChange={setFirstDate} />
       </section>
-      <section aria-label="三次領藥日期" className="grid gap-4 md:grid-cols-3">
-        <DateHero order="今天／起始日" date={schedule.firstDate} tone="primary" />
-        <DateHero order="第二次 · +28 天" date={schedule.secondDate} />
-        <DateHero order="第三次 · +56 天" date={schedule.thirdDate} />
-      </section>
-      {schedule.secondDate.getFullYear() !== schedule.firstDate.getFullYear() && <p className="notice"><CircleAlert size={18} /> 排程已跨年度，請確認上方完整年份。</p>}
-      <section className="space-y-3">
-        <h2 className="section-title">實際領藥調整</h2>
-        <ActualDispensePanel label="第二次：" scheduled={schedule.secondDate} />
-        <ActualDispensePanel label="第三次：" scheduled={schedule.thirdDate} />
-      </section>
+      {schedule ? <>
+        <section aria-label="三次領藥日期" className="grid gap-4 md:grid-cols-3">
+          <DateHero order="今天／起始日" date={schedule.firstDate} tone="primary" />
+          <DateHero order="第二次 · +28 天" date={schedule.secondDate} />
+          <DateHero order="第三次 · +56 天" date={schedule.thirdDate} />
+        </section>
+        {schedule.secondDate.getFullYear() !== schedule.firstDate.getFullYear() && <p className="notice"><CircleAlert size={18} /> 排程已跨年度，請確認上方完整年份。</p>}
+        <section className="space-y-3">
+          <h2 className="section-title">實際領藥調整</h2>
+          <ActualDispensePanel label="第二次：" scheduled={schedule.secondDate} />
+          <ActualDispensePanel label="第三次：" scheduled={schedule.thirdDate} />
+        </section>
+      </> : <section className="panel text-center" aria-live="polite"><CalendarDays className="mx-auto text-slate-400" /><p className="mt-3 font-extrabold text-ink">請輸入有效日期</p><p className="mt-1 text-sm text-slate-500">日期有效後將立即顯示三次領藥排程。</p></section>}
     </main>
   );
 }
@@ -276,25 +269,31 @@ function ResultCard({ title, result, meta, purple = false }: { title: string; re
   );
 }
 
-function MobileResultSummary({ metabolic, dm, ckd, dkd }: { metabolic: EligibilityResult & { positiveCount: number }; dm: EligibilityResult; ckd: EligibilityResult & { stage: string | null }; dkd: EligibilityResult }) {
+function MobileResultSummary({ metabolic, metabolicProgram, dm, ckd, dkd, vpnConfirmed }: { metabolic: EligibilityResult & { positiveCount: number }; metabolicProgram: EligibilityResult; dm: EligibilityResult; ckd: EligibilityResult & { stage: string | null }; dkd: EligibilityResult; vpnConfirmed: boolean }) {
   const rows = [
-    { title: '代謝症候群', result: metabolic, meta: `${metabolic.positiveCount}/5` },
-    { title: 'DM', result: dm },
-    { title: 'CKD', result: ckd, meta: ckd.stage ?? undefined },
-    { title: 'DKD', result: dkd }
+    { title: '代謝', result: metabolic, meta: `${metabolic.positiveCount}/5`, target: 'eligibility-metabolic' },
+    { title: 'DM', result: dm, target: 'eligibility-dm' },
+    { title: 'CKD', result: ckd, meta: ckd.stage ?? undefined, target: 'eligibility-ckd' },
+    { title: 'DKD', result: dkd, target: 'eligibility-dm' }
   ];
+  const preEsrd = ckd.status === 'refer' && ckd.reasons.some((reason) => reason.includes('Pre-ESRD'));
+  const vpnPending = !vpnConfirmed && (metabolicProgram.status === 'eligible' || dm.status === 'eligible' || ckd.status === 'eligible');
   return (
     <section className="mobile-summary" aria-label="即時判斷摘要" aria-live="polite">
-      <div className="mb-2 flex items-center justify-between"><h2 className="font-black text-ink">即時結果</h2><span className="text-xs font-semibold text-slate-500">自動更新</span></div>
-      <div className="divide-y divide-slate-100">
-        {rows.map(({ title, result, meta }) => <div key={title} className="flex min-h-11 items-center justify-between gap-2 py-2"><span className="text-sm font-extrabold text-slate-700">{title}{meta ? ` · ${meta}` : ''}</span><StatusBadge status={result.status} /></div>)}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+        {rows.map(({ title, result, meta, target }) => {
+          const config = statusConfig[result.status];
+          return <button type="button" key={title} className="mobile-summary-row" aria-label={`${title}：${config.label}，前往對應欄位`} onClick={() => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}><span>{title}{meta ? ` · ${meta}` : ''}</span><span aria-hidden="true">{config.icon}</span></button>;
+        })}
       </div>
+      {preEsrd && <p className="mobile-alert mobile-alert-refer">🔵 CKD：建議評估 Pre-ESRD</p>}
+      {vpnPending && <div className="mobile-alert mobile-alert-vpn"><p>🟢 依目前條件符合</p><p>⚠ 尚未確認 VPN／收案系統資格</p></div>}
     </section>
   );
 }
 
-function SectionCard({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
-  return <section className="panel"><div className="mb-5"><h2 className="section-title">{title}</h2>{hint && <p className="mt-1 text-sm text-slate-500">{hint}</p>}</div>{children}</section>;
+function SectionCard({ id, title, hint, children }: { id?: string; title: string; hint?: string; children: React.ReactNode }) {
+  return <section id={id} className="panel scroll-mt-4"><div className="mb-5"><h2 className="section-title">{title}</h2>{hint && <p className="mt-1 text-sm text-slate-500">{hint}</p>}</div>{children}</section>;
 }
 
 function EligibilityPage() {
@@ -320,12 +319,12 @@ function EligibilityPage() {
   const needsUrine = ckd.stage === 'G1' || ckd.stage === 'G2';
 
   return (
-    <main className="page-shell pb-32 lg:pb-12">
+    <main className="page-shell eligibility-shell lg:pb-12">
       <div className="page-heading">
         <div><p className="eyebrow"><ClipboardCheck size={16} /> 即時、共用輸入</p><h1>收案快速判斷</h1><p>代謝症候群、DM、Early CKD 與 DKD；所有判斷隨輸入立即更新。</p></div>
         <button className="secondary-button" onClick={() => setInput(emptyEligibility())}><RotateCcw size={18} /> 全部清除</button>
       </div>
-      <MobileResultSummary metabolic={metabolic} dm={dm} ckd={ckd} dkd={dkd} />
+      <MobileResultSummary metabolic={metabolic} metabolicProgram={metabolicProgram} dm={dm} ckd={ckd} dkd={dkd} vpnConfirmed={input.vpnConfirmed} />
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-5 min-w-0">
           <SectionCard title="1. 共用基本條件" hint="年齡與生理性別同時供代謝症候群規則使用。">
@@ -335,7 +334,7 @@ function EligibilityPage() {
             </div>
           </SectionCard>
 
-          <SectionCard title="2. 代謝症候群" hint="五項判定與防治計畫收案資格分開呈現。">
+          <SectionCard id="eligibility-metabolic" title="2. 代謝症候群" hint="五項判定與防治計畫收案資格分開呈現。">
             <div className="space-y-5">
               <div className="grid gap-4 sm:grid-cols-2"><NumberField label="腰圍" value={input.waist} onChange={(v) => update('waist', v)} unit="cm" max={250} /><NumberField label="BMI" value={input.bmi} onChange={(v) => update('bmi', v)} unit="kg/m²" max={100} /></div>
               <div className="grid gap-4 sm:grid-cols-2"><NumberField label="收縮壓 SBP" value={input.sbp} onChange={(v) => update('sbp', v)} unit="mmHg" max={300} /><NumberField label="舒張壓 DBP" value={input.dbp} onChange={(v) => update('dbp', v)} unit="mmHg" max={200} /></div>
@@ -349,11 +348,11 @@ function EligibilityPage() {
             </div>
           </SectionCard>
 
-          <SectionCard title="3. DM 收案條件">
+          <SectionCard id="eligibility-dm" title="3. DM 收案條件">
             <div className="space-y-4"><TriChoice label="有 E08–E13 糖尿病診斷" value={input.dmDiagnosis} onChange={(v) => update('dmDiagnosis', v)} /><TriChoice label="近 90 天本院糖尿病就醫 ≥ 2 次" value={input.dmVisits} onChange={(v) => update('dmVisits', v)} /><TriChoice label="本次 DM 為主診斷" value={input.dmPrimaryDiagnosis} onChange={(v) => update('dmPrimaryDiagnosis', v)} /><TriChoice label="過去一年本院是否曾因此方案結案" value={input.dmClosedWithinYear} onChange={(v) => update('dmClosedWithinYear', v)} unknown /></div>
           </SectionCard>
 
-          <SectionCard title="4. Early CKD 收案條件" hint="先輸入 eGFR；僅 G1／G2 需要再輸入 UACR 或 UPCR。">
+          <SectionCard id="eligibility-ckd" title="4. Early CKD 收案條件" hint="先輸入 eGFR；僅 G1／G2 需要再輸入 UACR 或 UPCR。">
             <div className="space-y-5">
               <NumberField label="eGFR" value={input.egfr} onChange={(v) => update('egfr', v)} unit="mL/min/1.73m²" max={250} />
               {ckd.stage && <div className="rounded-xl bg-blue-50 p-4 text-blue-900" aria-live="polite"><p className="text-xs font-bold uppercase tracking-wide">CKD Stage</p><p className="mt-1 text-3xl font-black">{ckd.stage}</p>{ckd.stage === 'G3a' && <p className="mt-1 text-sm font-semibold">G3a 不需額外蛋白尿門檻</p>}{ckd.reasons.includes('蛋白尿條件符合') && <p className="mt-1 text-sm font-semibold">蛋白尿條件符合</p>}</div>}

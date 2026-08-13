@@ -40,7 +40,12 @@
   .confirm-check { @apply flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4; }
   .confirm-check small { @apply mt-1 block text-sm font-normal leading-5 text-slate-500; }
   .results-dock { @apply rounded-2xl border border-slate-200 bg-[#f5f8f7]/95 p-3 lg:sticky lg:top-5; }
-  .mobile-summary { @apply rounded-2xl border border-slate-200 bg-white p-4 shadow-soft lg:hidden; }
+  .mobile-summary { @apply fixed inset-x-3 z-30 rounded-2xl border border-slate-300 bg-white/95 p-3 shadow-2xl backdrop-blur-sm lg:hidden; bottom: calc(0.5rem + env(safe-area-inset-bottom)); }
+  .mobile-summary-row { @apply flex min-h-9 items-center justify-between gap-2 border-b border-slate-100 py-1 text-left text-sm font-extrabold text-slate-700; }
+  .mobile-alert { @apply mt-2 rounded-lg px-2.5 py-1.5 text-xs font-extrabold leading-5; }
+  .mobile-alert-refer { @apply bg-blue-50 text-blue-900; }
+  .mobile-alert-vpn { @apply bg-amber-50 text-amber-950; }
+  .eligibility-shell { padding-bottom: calc(11rem + env(safe-area-inset-bottom)); }
   .result-card { @apply rounded-xl border border-slate-200 bg-white p-4 shadow-sm; }
   .result-card h3 { @apply font-black text-ink; }
   .result-card-purple { @apply border-purple-200 bg-purple-50/50; }
@@ -53,6 +58,13 @@
 
 @media (max-width: 639px) {
   input[type="date"] { min-width: 0; }
+}
+
+@media (max-width: 1023px) {
+  body:has(input:focus) .mobile-summary { @apply px-2 py-1; }
+  body:has(input:focus) .mobile-summary > .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  body:has(input:focus) .mobile-summary-row { @apply min-h-8 justify-center gap-1 border-0 text-xs; }
+  body:has(input:focus) .mobile-alert { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
