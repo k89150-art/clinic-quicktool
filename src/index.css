@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  html { color-scheme: light; }
+  body { margin: 0; min-width: 320px; background: #f5f8f7; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif; }
+  button, input, summary { outline: none; }
+  button:focus-visible, input:focus-visible, summary:focus-visible { @apply ring-2 ring-clinic-600 ring-offset-2; }
+  summary { @apply cursor-pointer font-bold text-clinic-700; }
+}
+
+@layer components {
+  .page-shell { @apply mx-auto max-w-7xl space-y-6 px-4 py-7 sm:px-6 sm:py-10; }
+  .page-heading { @apply flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between; }
+  .page-heading h1 { @apply mt-2 text-3xl font-black tracking-tight text-ink sm:text-4xl; }
+  .page-heading > div > p:last-child { @apply mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base; }
+  .eyebrow { @apply inline-flex items-center gap-2 text-sm font-extrabold text-clinic-700; }
+  .icon-button { @apply grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50; }
+  .secondary-button { @apply inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-extrabold text-slate-700 shadow-sm hover:bg-slate-50; }
+  .home-card { @apply flex min-h-36 w-full items-center gap-4 rounded-3xl border border-slate-200 bg-white p-5 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-clinic-600 hover:shadow-lg sm:p-7; }
+  .home-icon { @apply grid h-16 w-16 shrink-0 place-items-center rounded-2xl; }
+  .panel { @apply rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-6; }
+  .section-title { @apply flex items-center gap-2 text-lg font-black text-ink; }
+  .field-label { @apply block text-sm font-bold text-slate-700; }
+  .field { @apply mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base font-semibold text-ink shadow-sm placeholder:font-normal placeholder:text-slate-400 hover:border-slate-400 focus:border-clinic-700; }
+  .field-error { @apply border-red-500 bg-red-50; }
+  .date-card { @apply rounded-3xl border border-slate-200 bg-white p-5 text-ink shadow-soft sm:p-6; }
+  .date-card-primary { @apply border-clinic-700 bg-clinic-700 text-white; }
+  .notice { @apply flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900; }
+  .question-row { @apply flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between; }
+  .question-row legend { @apply max-w-xl text-sm font-bold leading-6 text-slate-700; }
+  .choice-group { @apply inline-flex min-h-11 shrink-0 rounded-xl bg-slate-100 p-1; }
+  .choice { @apply min-h-11 min-w-16 rounded-lg px-3 py-2 text-sm font-bold text-slate-600 hover:bg-white; }
+  .choice-active { @apply min-h-11 min-w-16 rounded-lg bg-white px-3 py-2 text-sm font-extrabold text-clinic-800 shadow-sm ring-1 ring-slate-200; }
+  .compact-lab { @apply grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto]; }
+  .med-toggle { @apply inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700; }
+  .med-toggle input, .confirm-check input { @apply h-5 w-5 accent-clinic-700; }
+  .confirm-check { @apply flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4; }
+  .confirm-check small { @apply mt-1 block text-sm font-normal leading-5 text-slate-500; }
+  .results-dock { @apply rounded-2xl border border-slate-200 bg-[#f5f8f7]/95 p-3 lg:sticky lg:top-5; }
+  .mobile-summary { @apply rounded-2xl border border-slate-200 bg-white p-4 shadow-soft lg:hidden; }
+  .result-card { @apply rounded-xl border border-slate-200 bg-white p-4 shadow-sm; }
+  .result-card h3 { @apply font-black text-ink; }
+  .result-card-purple { @apply border-purple-200 bg-purple-50/50; }
+  .status-badge { @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-extrabold; }
+  .status-eligible { @apply bg-emerald-100 text-emerald-900; }
+  .status-not { @apply bg-red-100 text-red-900; }
+  .status-missing { @apply bg-amber-100 text-amber-950; }
+  .status-refer { @apply bg-blue-100 text-blue-900; }
+}
+
+@media (max-width: 639px) {
+  input[type="date"] { min-width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+}
