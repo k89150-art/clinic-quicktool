@@ -24,7 +24,7 @@ describe('prescription date input resilience', () => {
     await openPrescription();
     fireEvent.change(screen.getByLabelText('日期選擇'), { target: { value: '' } });
     expect(screen.getAllByText('請輸入有效日期').length).toBeGreaterThan(0);
-    expect(screen.getByText('日期有效後將立即顯示三次領藥排程。')).toBeInTheDocument();
+    expect(screen.getByText('日期有效後將立即顯示抽血與回診日期。')).toBeInTheDocument();
     expect(screen.getByText('門診快速助手')).toBeInTheDocument();
   });
 
@@ -34,6 +34,15 @@ describe('prescription date input resilience', () => {
     fireEvent.change(screen.getByLabelText('實際領藥日期'), { target: { value: '' } });
     expect(screen.getAllByText('請輸入有效日期').length).toBeGreaterThan(0);
     expect(screen.queryByText(/提前|準時領藥|延後/)).not.toBeInTheDocument();
+    expect(screen.getByText('門診快速助手')).toBeInTheDocument();
+  });
+
+  it('does not crash when the actual third dispense date is cleared', async () => {
+    const user = await openPrescription();
+    await user.click(screen.getByRole('button', { name: '第 3 次領藥' }));
+    fireEvent.change(screen.getByLabelText('實際第3次領藥日期'), { target: { value: '' } });
+    expect(screen.getAllByText('請輸入有效日期').length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText('慢箋計算結果')).not.toBeInTheDocument();
     expect(screen.getByText('門診快速助手')).toBeInTheDocument();
   });
 
@@ -93,36 +102,48 @@ describe('prescription workflow UI', () => {
     expect(screen.queryByLabelText(/原預定第2次領藥日期/)).not.toBeInTheDocument();
   });
 
-  it('shows a lightweight reminder for the default third-dispense assumption', async () => {
+  it('shows the third-dispense answer immediately with today as the actual date', async () => {
     const user = await openPrescription();
     await user.click(screen.getByRole('button', { name: '第 3 次領藥' }));
-    expect(screen.getByText('若第2次曾延後領藥，請改選「有」以重新計算正確排程。')).toBeInTheDocument();
+
+    expect(screen.getByLabelText('慢箋計算結果')).toBeInTheDocument();
+    expect(screen.getByLabelText('慢箋主要日期摘要')).toBeInTheDocument();
+    expect(screen.queryByText('第2次領藥是否曾延後？')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('第2次實際領藥日期')).not.toBeInTheDocument();
   });
 
-  it('requires the actual second date only when it was delayed', async () => {
+  it('calculates the third workflow from the actual date without a last visit', async () => {
     const user = await openPrescription();
     await user.click(screen.getByRole('button', { name: '第 3 次領藥' }));
-    const question = screen.getByText('第2次領藥是否曾延後？').closest('fieldset')!;
-    await user.click(within(question).getByRole('button', { name: '有' }));
+    fireEvent.change(screen.getByLabelText('實際第3次領藥日期'), { target: { value: '2026-07-23' } });
 
-    expect(screen.getByLabelText('第2次實際領藥日期')).toBeInTheDocument();
-    expect(screen.getAllByText('請輸入有效日期').length).toBeGreaterThan(0);
-    expect(screen.queryByLabelText('慢箋計算結果')).not.toBeInTheDocument();
+    expect(screen.getAllByText('08/13').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('08/20').length).toBeGreaterThan(0);
+    expect(screen.queryByText('原始排程參考')).not.toBeInTheDocument();
   });
 
-  it('calculates third dispense after a delayed second dispense', async () => {
+  it('uses the optional last visit only to show comparison with the original schedule', async () => {
     const user = await openPrescription();
     await user.click(screen.getByRole('button', { name: '第 3 次領藥' }));
-    fireEvent.change(screen.getByLabelText('日期選擇'), { target: { value: '2026-05-25' } });
-    const question = screen.getByText('第2次領藥是否曾延後？').closest('fieldset')!;
-    await user.click(within(question).getByRole('button', { name: '有' }));
-    fireEvent.change(screen.getByLabelText('第2次實際領藥日期'), { target: { value: '2026-06-25' } });
-    fireEvent.change(screen.getByLabelText('實際第3次領藥日期'), { target: { value: '2026-07-25' } });
+    fireEvent.change(screen.getByLabelText('實際第3次領藥日期'), { target: { value: '2026-07-23' } });
+    fireEvent.change(screen.getByLabelText('最後一次看診日期（選填）'), { target: { value: '2026-05-25' } });
 
-    expect(screen.getByText('第3次領藥 · 延後 2 天')).toBeInTheDocument();
+    expect(screen.getAllByText(/原始第3次排程：/)[0]).toHaveTextContent('2026/07/20');
+    expect(screen.getByText('相較最後一次看診日起算之原始第3次排程：晚 3 天')).toBeInTheDocument();
+    expect(screen.queryByText(/第3次領藥 · 延後/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('08/13').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('08/20').length).toBeGreaterThan(0);
+  });
+
+  it('labels an early original-schedule comparison without changing actual-date arithmetic', async () => {
+    const user = await openPrescription();
+    await user.click(screen.getByRole('button', { name: '第 3 次領藥' }));
+    fireEvent.change(screen.getByLabelText('實際第3次領藥日期'), { target: { value: '2026-07-18' } });
+    fireEvent.change(screen.getByLabelText('最後一次看診日期（選填）'), { target: { value: '2026-05-25' } });
+
+    expect(screen.getByText('相較最後一次看診日起算之原始第3次排程：早 2 天')).toBeInTheDocument();
+    expect(screen.getAllByText('08/08').length).toBeGreaterThan(0);
     expect(screen.getAllByText('08/15').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('08/22').length).toBeGreaterThan(0);
   });
 });
 

@@ -6,7 +6,7 @@ Scope: chronic prescription workflow, date calculation, and related Desktop/Mobi
 
 ## Workflow
 
-All modes begin with `最後一次看診／開慢箋日期` and use a fixed 28-day dispense interval.
+All modes use a fixed 28-day dispense interval. The new-prescription and second-dispense modes begin with `最後一次看診／開慢箋日期`; the third-dispense mode begins with the actual third dispense date.
 
 ### New prescription
 
@@ -30,13 +30,14 @@ Inputs: last visit D0 and actual second dispense A2. The original scheduled seco
 
 ### Third dispense
 
-Inputs: last visit D0, actual third dispense A3, and whether the second dispense was delayed.
+Required input: actual third dispense A3. It defaults to today, so selecting the third-dispense mode immediately produces the result.
 
-- No / unknown second delay: derive S3 as D0 + 56 and show a non-blocking reminder that a known delay should be entered.
-- Known second delay: require actual second dispense A2 and derive S3 as A2 + 28.
-- A3 <= S3: keep follow-up at S3 + 28.
-- A3 > S3: move follow-up to A3 + 28.
-- Lab: follow-up − 7.
+- Follow-up: A3 + 28 days, regardless of the original schedule.
+- Lab: follow-up − 7 days.
+- Last visit D0 is optional and never blocks this calculation.
+- When D0 is present, the UI may show the original reference dates D0 + 28, D0 + 56, and D0 + 84 and compare A3 with the original third date.
+- The comparison is worded as `相較最後一次看診日起算之原始第3次排程：早／晚 N 天`; it is not presented as a clinical judgment that the third dispense itself was delayed.
+- The workflow does not ask whether the second dispense was delayed and does not request the actual second dispense date.
 
 ## Rule engine
 
@@ -66,6 +67,8 @@ After:
 - Three large modes: new, second dispense, and third dispense.
 - Only inputs required for the selected mode are shown.
 - Users never enter an original second/third scheduled date.
+- Third dispense has one required input, defaults it to today, and gives the answer in one mode-selection click.
+- Its optional last-visit field is visually secondary and supplies reference context only.
 - Lab and follow-up appear first in large side-by-side cards.
 - Mobile dispense modes also keep a compact lab/follow-up summary above the safe area for longer forms; the new-prescription mode already shows both primary cards in the first viewport. The compact summary hides while a virtual keyboard/input is active.
 - Detailed scheduled/actual dates and early/on-time/late context appear below.
@@ -75,12 +78,12 @@ After:
 
 - New prescription reference scenario.
 - Second dispense early, on-time, and late.
-- Third dispense early, on-time, and late.
-- Third dispense after delayed second, including an additional delay.
+- Third dispense with only A3, with an explicit null D0, and with an optional D0 reference.
+- Third dispense earlier/later than the original third schedule while preserving A3-based follow-up arithmetic.
 - Month, year, and leap-year boundaries.
 - Null and invalid dates.
 - Cleared native date inputs, incomplete quick input, and invalid month/day input.
-- Dynamic UI fields, non-blocking second-delay reminder, and primary result hierarchy.
+- Removal of all second-dispense-history fields from third mode, one-click default result, and primary result hierarchy.
 
 ## Unchanged areas
 

@@ -10,7 +10,7 @@ import {
   calculateInitialPrescriptionPlan, calculateSecondDispensePlan, calculateThirdDispensePlan
 } from './features/prescription/domain/prescriptionWorkflowRules';
 import type {
-  DispenseComparison, PrescriptionTimeline, PrescriptionVisitMode
+  DispenseComparison, PrescriptionTimeline, PrescriptionVisitMode, ThirdDispenseResult
 } from './features/prescription/domain/prescriptionWorkflowRules';
 import { isValidLocalDate, parseLocalDateInput, parseQuickMonthDay, toDateInputValue } from './features/prescription/dateInput';
 import { evaluateMetabolicProgramEligibility, evaluateMetabolicSyndrome } from './features/eligibility/domain/metabolicRules';
@@ -97,7 +97,7 @@ function Home({ onNavigate }: { onNavigate: (page: Page) => void }) {
   );
 }
 
-function QuickDateInput({ date, onChange }: { date: Date | null; onChange: (date: Date | null) => void }) {
+function QuickDateInput({ date, onChange, optional = false, dateLabel = '日期選擇' }: { date: Date | null; onChange: (date: Date | null) => void; optional?: boolean; dateLabel?: string }) {
   const [quick, setQuick] = useState('');
   const [error, setError] = useState('');
   const applyQuick = () => {
@@ -112,15 +112,15 @@ function QuickDateInput({ date, onChange }: { date: Date | null; onChange: (date
   };
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <label className="field-label">日期選擇
-        <input className="field" type="date" value={toDateInputValue(date)} aria-invalid={!date}
-          onChange={(event) => { const parsed = parseLocalDateInput(event.target.value); onChange(parsed); setError(parsed ? '' : '請輸入有效日期'); }} />
+      <label className="field-label">{dateLabel}
+        <input className="field" type="date" value={toDateInputValue(date)} aria-invalid={!optional && !date}
+          onChange={(event) => { const parsed = parseLocalDateInput(event.target.value); onChange(parsed); setError(parsed || (optional && !event.target.value) ? '' : '請輸入有效日期'); }} />
       </label>
       <label className="field-label">快速輸入（月日）
         <input className="field" inputMode="numeric" maxLength={4} placeholder="例如 525、1025" value={quick}
           onChange={(event) => setQuick(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && applyQuick()} onBlur={() => quick && applyQuick()} />
       </label>
-      {(error || !date) && <p className="sm:col-span-2 text-sm font-medium text-red-700" role="alert">{error || '請輸入有效日期'}</p>}
+      {(error || (!optional && !date)) && <p className="sm:col-span-2 text-sm font-medium text-red-700" role="alert">{error || '請輸入有效日期'}</p>}
     </div>
   );
 }
@@ -149,7 +149,7 @@ function ActualDateField({ label, value, onChange, ariaLabel }: { label: string;
   </label>;
 }
 
-function DispenseContext({ order, result }: { order: '第2次' | '第3次'; result: DispenseComparison }) {
+function DispenseContext({ result }: { result: DispenseComparison }) {
   const config = {
     early: `提前 ${result.differenceDays} 天`,
     'on-time': '準時領藥',
@@ -157,7 +157,7 @@ function DispenseContext({ order, result }: { order: '第2次' | '第3次'; resu
   }[result.status];
   return (
     <div className="workflow-context">
-      <p className="font-extrabold text-ink">{order}領藥 · {config}</p>
+      <p className="font-extrabold text-ink">第2次領藥 · {config}</p>
       <div className="mt-2 grid gap-1 text-sm text-slate-600 sm:grid-cols-2">
         <p>原定：<strong>{fullDate(result.scheduledDate)}</strong></p>
         <p>實際：<strong>{fullDate(result.actualDate)}</strong></p>
@@ -173,7 +173,7 @@ function PrescriptionResult({ mode, timeline, dispense }: { mode: PrescriptionVi
       <WorkflowDateResult label="回診日期" date={timeline.followUpDate} icon="visit" />
     </div>
     <div className="panel workflow-details">
-      {dispense && <DispenseContext order={mode === 'second-dispense' ? '第2次' : '第3次'} result={dispense} />}
+      {dispense && <DispenseContext result={dispense} />}
       <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
         {mode === 'new' && <p>第1次領藥：<strong>{fullDate(timeline.lastVisitDate)}</strong></p>}
         <p>第2次預定：<strong>{fullDate(timeline.scheduledSecondDate)}</strong></p>
@@ -183,10 +183,38 @@ function PrescriptionResult({ mode, timeline, dispense }: { mode: PrescriptionVi
   </section>;
 }
 
-function PrescriptionMobileSummary({ timeline }: { timeline: PrescriptionTimeline }) {
+function ThirdDispenseResultView({ result }: { result: ThirdDispenseResult }) {
+  const comparison = result.differenceFromOriginalDays === null
+    ? null
+    : result.differenceFromOriginalDays === 0
+      ? '同日'
+      : result.differenceFromOriginalDays > 0
+        ? `晚 ${result.differenceFromOriginalDays} 天`
+        : `早 ${Math.abs(result.differenceFromOriginalDays)} 天`;
+
+  return <section aria-label="慢箋計算結果" className="space-y-4" aria-live="polite">
+    <div className="grid grid-cols-2 gap-3 sm:gap-4">
+      <WorkflowDateResult label="抽血日期" date={result.labDate} icon="lab" />
+      <WorkflowDateResult label="回診日期" date={result.followUpDate} icon="visit" />
+    </div>
+    <div className="panel workflow-details">
+      <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+        <p>本次第3次實際領藥：<strong>{fullDate(result.actualThirdDate)}</strong></p>
+        <p>藥物療程：<strong>28 天</strong></p>
+      </div>
+      {result.originalThirdDate && comparison && <div className="workflow-context mt-4">
+        <p className="font-extrabold text-ink">原始排程參考</p>
+        <p className="mt-2 text-sm text-slate-600">原始第3次排程：<strong>{fullDate(result.originalThirdDate)}</strong></p>
+        <p className="mt-1 text-sm font-bold text-slate-700">相較最後一次看診日起算之原始第3次排程：{comparison}</p>
+      </div>}
+    </div>
+  </section>;
+}
+
+function PrescriptionMobileSummary({ labDate, followUpDate }: { labDate: Date; followUpDate: Date }) {
   return <aside className="prescription-mobile-summary" aria-label="慢箋主要日期摘要" aria-live="polite">
-    <div><span>🧪 抽血</span><strong>{shortDate(timeline.labDate)}</strong><small>{weekDay(timeline.labDate)}</small></div>
-    <div><span>🩺 回診</span><strong>{shortDate(timeline.followUpDate)}</strong><small>{weekDay(timeline.followUpDate)}</small></div>
+    <div><span>🧪 抽血</span><strong>{shortDate(labDate)}</strong><small>{weekDay(labDate)}</small></div>
+    <div><span>🩺 回診</span><strong>{shortDate(followUpDate)}</strong><small>{weekDay(followUpDate)}</small></div>
   </aside>;
 }
 
@@ -195,14 +223,12 @@ function PrescriptionPage() {
   const [lastVisitDate, setLastVisitDate] = useState<Date | null>(today);
   const [actualSecondDate, setActualSecondDate] = useState<Date | null>(today);
   const [actualThirdDate, setActualThirdDate] = useState<Date | null>(today);
-  const [secondWasDelayed, setSecondWasDelayed] = useState(false);
 
   const selectMode = (nextMode: PrescriptionVisitMode) => {
     setMode(nextMode);
     setLastVisitDate(nextMode === 'new' ? today() : null);
     setActualSecondDate(today());
     setActualThirdDate(today());
-    setSecondWasDelayed(false);
   };
 
   const result = useMemo(() => {
@@ -211,19 +237,18 @@ function PrescriptionPage() {
       return timeline ? { timeline } : null;
     }
     if (mode === 'second-dispense') return calculateSecondDispensePlan({ lastVisitDate, actualSecondDate });
-    return calculateThirdDispensePlan({ lastVisitDate, actualThirdDate, secondWasDelayed, actualSecondDate });
-  }, [mode, lastVisitDate, actualSecondDate, actualThirdDate, secondWasDelayed]);
+    return calculateThirdDispensePlan({ actualThirdDate, lastVisitDate });
+  }, [mode, lastVisitDate, actualSecondDate, actualThirdDate]);
 
   return (
     <main className="page-shell prescription-shell">
       <div className="page-heading">
-        <div><p className="eyebrow"><Pill size={16} /> 固定 28 天週期</p><h1>慢箋療程</h1><p>從最後一次看診／開慢箋日期，快速推算抽血與回診日期。</p></div>
+        <div><p className="eyebrow"><Pill size={16} /> 固定 28 天週期</p><h1>慢箋療程</h1><p>依目前療程階段，快速推算抽血與回診日期。</p></div>
         <button className="secondary-button" onClick={() => selectMode(mode)}><RotateCcw size={18} /> 重設此模式</button>
       </div>
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
       <section className="panel">
-        <h2 className="section-title"><CalendarDays size={20} /> 最後一次看診／開慢箋日期</h2>
-        <div className="mt-4"><QuickDateInput key={mode} date={lastVisitDate} onChange={setLastVisitDate} /></div>
-        <fieldset className="mt-5">
+        <fieldset>
           <legend className="text-sm font-extrabold text-slate-700">目前狀況</legend>
           <div className="mt-2 grid grid-cols-3 gap-2" role="group" aria-label="目前狀況">
             <ModeButton mode="new" active={mode === 'new'} onSelect={selectMode}>新開慢箋</ModeButton>
@@ -232,22 +257,25 @@ function PrescriptionPage() {
           </div>
         </fieldset>
 
+        {mode !== 'third-dispense' && <div className="mt-5 border-t border-slate-100 pt-5">
+          <h2 className="section-title"><CalendarDays size={20} /> 最後一次看診／開慢箋日期</h2>
+          <div className="mt-4"><QuickDateInput key={mode} date={lastVisitDate} onChange={setLastVisitDate} /></div>
+        </div>}
         {mode === 'second-dispense' && <div className="mt-5 border-t border-slate-100 pt-5"><ActualDateField label="實際第2次領藥日期" ariaLabel="實際領藥日期" value={actualSecondDate} onChange={setActualSecondDate} /></div>}
         {mode === 'third-dispense' && <div className="mt-5 space-y-4 border-t border-slate-100 pt-5">
-          <fieldset>
-            <legend className="field-label">第2次領藥是否曾延後？</legend>
-            <div className="choice-group mt-2">
-              <button type="button" className={!secondWasDelayed ? 'choice-active' : 'choice'} onClick={() => { setSecondWasDelayed(false); setActualSecondDate(today()); }}>沒有／不知道</button>
-              <button type="button" className={secondWasDelayed ? 'choice-active' : 'choice'} onClick={() => { setSecondWasDelayed(true); setActualSecondDate(null); }}>有</button>
-            </div>
-          </fieldset>
-          {!secondWasDelayed && <p className="workflow-hint">若第2次曾延後領藥，請改選「有」以重新計算正確排程。</p>}
-          {secondWasDelayed && <ActualDateField label="第2次實際領藥日期" value={actualSecondDate} onChange={setActualSecondDate} />}
           <ActualDateField label="實際第3次領藥日期" value={actualThirdDate} onChange={setActualThirdDate} />
+          <div className="border-t border-slate-100 pt-4">
+            <h2 className="section-title"><CalendarDays size={20} /> 最後一次看診／開慢箋日期（選填）</h2>
+            <p className="workflow-hint mt-2">僅用於顯示原始第3次排程參考，不影響本次抽血與回診日期。</p>
+            <div className="mt-3"><QuickDateInput key={mode} date={lastVisitDate} onChange={setLastVisitDate} optional dateLabel="最後一次看診日期（選填）" /></div>
+          </div>
         </div>}
       </section>
-      {result ? <><PrescriptionResult mode={mode} timeline={result.timeline} dispense={'dispense' in result ? result.dispense : undefined} />{mode !== 'new' && <PrescriptionMobileSummary timeline={result.timeline} />}</>
-        : <section className="panel text-center" aria-live="polite"><CalendarDays className="mx-auto text-slate-400" /><p className="mt-3 font-extrabold text-ink">請輸入有效日期</p><p className="mt-1 text-sm text-slate-500">日期有效後將立即顯示三次領藥排程。</p></section>}
+      {result ? 'actualThirdDate' in result
+        ? <><ThirdDispenseResultView result={result} /><PrescriptionMobileSummary labDate={result.labDate} followUpDate={result.followUpDate} /></>
+        : <><PrescriptionResult mode={mode} timeline={result.timeline} dispense={'dispense' in result ? result.dispense : undefined} />{mode !== 'new' && <PrescriptionMobileSummary labDate={result.timeline.labDate} followUpDate={result.timeline.followUpDate} />}</>
+        : <section className="panel text-center" aria-live="polite"><CalendarDays className="mx-auto text-slate-400" /><p className="mt-3 font-extrabold text-ink">請輸入有效日期</p><p className="mt-1 text-sm text-slate-500">日期有效後將立即顯示抽血與回診日期。</p></section>}
+      </div>
     </main>
   );
 }

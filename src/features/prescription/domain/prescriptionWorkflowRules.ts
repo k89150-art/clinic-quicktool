@@ -27,10 +27,18 @@ export interface SecondDispenseInput {
 }
 
 export interface ThirdDispenseInput {
-  lastVisitDate: Date | null;
   actualThirdDate: Date | null;
-  secondWasDelayed: boolean;
-  actualSecondDate?: Date | null;
+  lastVisitDate?: Date | null;
+}
+
+export interface ThirdDispenseResult {
+  actualThirdDate: Date;
+  followUpDate: Date;
+  labDate: Date;
+  originalSecondDate: Date | null;
+  originalThirdDate: Date | null;
+  originalFollowUpDate: Date | null;
+  differenceFromOriginalDays: number | null;
 }
 
 export interface DispensePlan {
@@ -87,19 +95,24 @@ export function calculateSecondDispensePlan(input: SecondDispenseInput): Dispens
   };
 }
 
-export function calculateThirdDispensePlan(input: ThirdDispenseInput): DispensePlan | null {
-  const visit = safeDate(input.lastVisitDate);
+export function calculateThirdDispensePlan(input: ThirdDispenseInput): ThirdDispenseResult | null {
   const actualThird = safeDate(input.actualThirdDate);
-  const actualSecond = input.secondWasDelayed ? safeDate(input.actualSecondDate) : null;
-  if (!visit || !actualThird || (input.secondWasDelayed && !actualSecond)) return null;
+  if (!actualThird) return null;
 
-  const scheduledSecond = addDays(visit, DISPENSE_INTERVAL_DAYS);
-  const scheduledThird = addDays(actualSecond ?? visit, input.secondWasDelayed ? DISPENSE_INTERVAL_DAYS : DISPENSE_INTERVAL_DAYS * 2);
-  const dispense = compareDispense(scheduledThird, actualThird);
-  const followUpBase = dispense.status === 'late' ? actualThird : scheduledThird;
+  const visit = safeDate(input.lastVisitDate);
+  const followUpDate = addDays(actualThird, DISPENSE_INTERVAL_DAYS);
+  const originalSecondDate = visit ? addDays(visit, DISPENSE_INTERVAL_DAYS) : null;
+  const originalThirdDate = visit ? addDays(visit, DISPENSE_INTERVAL_DAYS * 2) : null;
 
   return {
-    dispense,
-    timeline: completeTimeline(visit, scheduledSecond, scheduledThird, followUpBase)
+    actualThirdDate: actualThird,
+    followUpDate,
+    labDate: addDays(followUpDate, -LAB_BEFORE_VISIT_DAYS),
+    originalSecondDate,
+    originalThirdDate,
+    originalFollowUpDate: visit ? addDays(visit, DISPENSE_INTERVAL_DAYS * 3) : null,
+    differenceFromOriginalDays: originalThirdDate
+      ? differenceInCalendarDays(actualThird, originalThirdDate)
+      : null
   };
 }
